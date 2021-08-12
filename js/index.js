@@ -2,6 +2,8 @@ let renderer = null;
 let camera = null;
 let scene = null;
 let controls = null;
+let materials = null;
+let cmtextures = null;
 
 
 function init(){
@@ -11,8 +13,9 @@ function init(){
     const height = window.innerHeight - 50
 
     const can = document.querySelector("#scene");
+    const context = can.getContext('webgl2')
     
-    renderer = new THREE.WebGLRenderer({canvas: can, alpha:true});
+    renderer = new THREE.WebGLRenderer({canvas: can, alpha:true, context:context});
     renderer.setClearColor('hsl(0, 0%, 0%)', 0)
     renderer.setSize(width, height)
     renderer.setPixelRatio(window.devicePixelRatio)
@@ -74,7 +77,61 @@ function init(){
 
 
     // the hard part... volume rendering
+    let positions = []
+    d3.csv("/particles/0.007.csv", data => {
 
+        positions.push((parseFloat(parseFloat(data['temp']))));
+
+    }).then(function() {
+        console.log(positions)
+        let data = new Float32Array(positions)
+        let volume = [128,64,64]
+
+        const texture = new THREE.DataTexture3D( data, volume[0], volume[1], volume[2] );
+        texture.format = THREE.RedFormat;
+        texture.type = THREE.FloatType;
+        texture.minFilter = texture.magFilter = THREE.LinearFilter;
+        texture.unpackAlignment = 1;
+
+        cmtextures = {
+            viridis: new THREE.TextureLoader().load( './textures/cm_viridis.png', render ),
+            gray: new THREE.TextureLoader().load( './textures/cm_gray.png', render )
+        };
+
+        console.log(cmtextures)
+
+        let volconfig = { clim1: 0, clim2: 1, renderstyle: 'iso', isothreshold: 0.15, colormap: 'viridis' };
+
+        // Material
+        const shader = VolumeRenderShader1;
+
+        const uniforms = THREE.UniformsUtils.clone( shader.uniforms );
+
+        uniforms[ "u_data" ].value = texture;
+        uniforms[ "u_size" ].value.set( volume[0], volume[1], volume[2] );
+        uniforms[ "u_clim" ].value.set( volconfig.clim1, volconfig.clim2 );
+        uniforms[ "u_renderstyle" ].value = volconfig.renderstyle == 'mip' ? 0 : 1; // 0: MIP, 1: ISO
+        uniforms[ "u_renderthreshold" ].value = volconfig.isothreshold; // For ISO renderstyle
+        uniforms[ "u_cmdata" ].value = cmtextures[ volconfig.colormap ];
+
+        material = new THREE.ShaderMaterial( {
+            uniforms: uniforms,
+            vertexShader: shader.vertexShader,
+            fragmentShader: shader.fragmentShader,
+            side: THREE.BackSide // The volume shader uses the backface as its "reference point"
+        } );
+
+        // THREE.Mesh
+        const geometry = new THREE.BoxGeometry( volume[0], volume[1], volume[2] );
+        geometry.translate( volume[0] / 2 - 0.5, volume[1] / 2 - 0.5, volume[2] / 2 - 0.5 );
+
+        const mesh = new THREE.Mesh( geometry, material );
+        scene.add( mesh );
+
+        render();
+        console.log('done')
+
+    });
 
 
 }
